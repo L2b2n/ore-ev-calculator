@@ -70,7 +70,7 @@
         
         const price = parseFloat(bestPair.priceUsd);
         
-        if (!price || price <= 0 || !isFinite(price)) {
+        if (price <= 0 || !isFinite(price)) {
           console.warn(`⚠️ Invalid price for ${tokenName}: ${price}`);
           return null;
         }
@@ -88,17 +88,27 @@
       }
     }
     
+    // Track if price update is in progress to prevent race conditions
+    let isPriceUpdateInProgress = false;
+    
     /**
      * Updates both ORE and SOL prices from DexScreener API
      * Implements exponential backoff on failures and rate limiting
      */
     async function updatePrices() {
+      // Prevent concurrent updates (race condition protection)
+      if (isPriceUpdateInProgress) {
+        return;
+      }
+      
       const now = Date.now();
       
       // Prevent too frequent updates
       if (now - lastPriceUpdate < MIN_PRICE_UPDATE_MS) {
         return;
       }
+      
+      isPriceUpdateInProgress = true;
       
       try {
         // Fetch both prices in parallel
@@ -144,6 +154,8 @@
         consecutiveFailures++;
         console.error('❌ Unexpected error in updatePrices:', error);
         console.log(`ℹ️ Using cached prices: ORE=$${PRICE_ORE_USD.toFixed(2)}, SOL=$${PRICE_SOL_USD.toFixed(2)}`);
+      } finally {
+        isPriceUpdateInProgress = false;
       }
     }
   
@@ -201,7 +213,8 @@
       const spans = Array.from(btn.querySelectorAll('span'));
       for (let i = spans.length - 1; i >= 0; i--) {
         const raw = (spans[i].textContent || '').trim().replace(/,/g, '');
-        if (/^\d+(\.\d+)?$/.test(raw) && raw.includes('.')) {
+        // Match decimal numbers (e.g., "12.34" or "0.5")
+        if (/^\d+\.\d+$/.test(raw)) {
           const v = parseFloat(raw);
           if (!isNaN(v) && isFinite(v) && v >= 0) return v;
         }
